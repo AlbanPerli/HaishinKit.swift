@@ -19,6 +19,7 @@ final class AudioIOComponent: IOComponent {
             _audioEngine = nil
         }
     }
+
     private var _playerNode: AVAudioPlayerNode?
     private var playerNode: AVAudioPlayerNode! {
         get {
@@ -34,6 +35,7 @@ final class AudioIOComponent: IOComponent {
             _playerNode = nil
         }
     }
+
     private var audioFormat: AVAudioFormat? {
         didSet {
             guard let audioEngine = audioEngine else { return }
@@ -151,22 +153,24 @@ extension AudioIOComponent: AudioConverterDelegate {
         }
     }
 
-    func sampleOutput(audio bytes: UnsafeMutableRawPointer?, count: UInt32, presentationTimeStamp: CMTime) {
+    func sampleOutput(audio data: UnsafeMutableAudioBufferListPointer, presentationTimeStamp: CMTime) {
+        guard !data.isEmpty else { return }
         guard
-            let bytes = bytes,
             let audioFormat = audioFormat,
-            let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: count / 4) else {
+            let buffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: data[0].mDataByteSize / 4) else {
             return
         }
 
         buffer.frameLength = buffer.frameCapacity
-        memcpy(buffer.mutableAudioBufferList.pointee.mBuffers.mData, bytes, Int(count))
-        buffer.mutableAudioBufferList.pointee.mBuffers.mDataByteSize = count
-        buffer.mutableAudioBufferList.pointee.mBuffers.mNumberChannels = 1
+        let bufferList = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        for i in 0..<bufferList.count {
+            memcpy(bufferList[i].mData, data[i].mData!, Int(data[i].mDataByteSize))
+            bufferList[i].mDataByteSize = data[i].mDataByteSize
+            bufferList[i].mNumberChannels = 1
+        }
 
         nstry({
-            self.playerNode.scheduleBuffer(buffer, completionHandler: {
-            })
+            self.playerNode.scheduleBuffer(buffer, completionHandler: nil)
             if !self.playerNode.isPlaying {
                 self.playerNode.play()
             }
